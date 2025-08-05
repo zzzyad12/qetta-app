@@ -1,0 +1,219 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>قِطّة - تقسيم المدفوعات</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Tahoma', sans-serif;
+            background: #f9f9f9;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 { color: #4CAF50; }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 12px rgba(0,0,0,0.1);
+        }
+        input, select, button {
+            margin: 5px;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        table {
+            width: 100%;
+            margin-top: 15px;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+        th { background: #4CAF50; color: white; }
+        td { background: #fdfdfd; }
+        canvas { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>قِطّة - تقسيم المدفوعات</h1>
+
+        <h2>إضافة شخص</h2>
+        <input id="personName" placeholder="اسم الشخص">
+        <button onclick="addPerson()">➕ إضافة</button>
+        <button onclick="resetAll()">🔄 إعادة تعيين</button>
+
+        <h2>إضافة دفعة</h2>
+        <select id="payer"></select>
+        <input id="amount" type="number" placeholder="المبلغ">
+        <select id="category">
+            <option value="طعام">🍽️ طعام</option>
+            <option value="سفر">✈️ سفر</option>
+            <option value="تسوق">🛍️ تسوق</option>
+            <option value="أخرى">📌 أخرى</option>
+        </select>
+        <button onclick="addPayment()">💵 إضافة دفعة</button>
+
+        <h2>المدفوعات</h2>
+        <table id="paymentsTable">
+            <tr><th>الشخص</th><th>المبلغ</th><th>التصنيف</th><th>إجراءات</th></tr>
+        </table>
+
+        <h2>التقرير</h2>
+        <table id="reportTable">
+            <tr><th>الشخص</th><th>مجموع المدفوع</th><th>النصيب العادل</th><th>الرصيد</th></tr>
+        </table>
+        <button onclick="downloadPDF()">📄 تنزيل PDF</button>
+        <button onclick="shareReport()">📤 مشاركة التقرير</button>
+
+        <canvas id="chartPie" width="400" height="200"></canvas>
+        <canvas id="chartBar" width="400" height="200"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        let people = JSON.parse(localStorage.getItem('people')) || [];
+        let payments = JSON.parse(localStorage.getItem('payments')) || [];
+
+        function saveData() {
+            localStorage.setItem('people', JSON.stringify(people));
+            localStorage.setItem('payments', JSON.stringify(payments));
+        }
+
+        function addPerson() {
+            const name = document.getElementById('personName').value;
+            if (name && !people.includes(name)) {
+                people.push(name);
+                document.getElementById('personName').value = '';
+                updateUI();
+                saveData();
+            }
+        }
+
+        function addPayment() {
+            const payer = document.getElementById('payer').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const category = document.getElementById('category').value;
+            if (payer && amount > 0) {
+                payments.push({ payer, amount, category });
+                document.getElementById('amount').value = '';
+                updateUI();
+                saveData();
+            }
+        }
+
+        function deletePayment(index) {
+            payments.splice(index, 1);
+            updateUI();
+            saveData();
+        }
+
+        function resetAll() {
+            if (confirm("هل تريد مسح جميع البيانات؟")) {
+                people = [];
+                payments = [];
+                saveData();
+                updateUI();
+            }
+        }
+
+        function updateUI() {
+            const payerSelect = document.getElementById('payer');
+            payerSelect.innerHTML = '';
+            people.forEach(p => {
+                const option = document.createElement('option');
+                option.value = p;
+                option.textContent = p;
+                payerSelect.appendChild(option);
+            });
+
+            const paymentsTable = document.getElementById('paymentsTable');
+            paymentsTable.innerHTML = '<tr><th>الشخص</th><th>المبلغ</th><th>التصنيف</th><th>إجراءات</th></tr>';
+            payments.forEach((pay, index) => {
+                const row = `<tr>
+                    <td>${pay.payer}</td>
+                    <td>${pay.amount}</td>
+                    <td>${pay.category}</td>
+                    <td><button onclick="deletePayment(${index})">🗑️ حذف</button></td>
+                </tr>`;
+                paymentsTable.innerHTML += row;
+            });
+
+            const total = payments.reduce((sum, p) => sum + p.amount, 0);
+            const fairShare = people.length ? (total / people.length) : 0;
+
+            const reportTable = document.getElementById('reportTable');
+            reportTable.innerHTML = '<tr><th>الشخص</th><th>مجموع المدفوع</th><th>النصيب العادل</th><th>الرصيد</th></tr>';
+            people.forEach(p => {
+                const paid = payments.filter(x => x.payer === p).reduce((sum, x) => sum + x.amount, 0);
+                const balance = paid - fairShare;
+                const row = `<tr><td>${p}</td><td>${paid}</td><td>${fairShare.toFixed(2)}</td><td>${balance.toFixed(2)}</td></tr>`;
+                reportTable.innerHTML += row;
+            });
+
+            drawCharts();
+        }
+
+        function drawCharts() {
+            const ctxPie = document.getElementById('chartPie').getContext('2d');
+            const ctxBar = document.getElementById('chartBar').getContext('2d');
+            const labels = people;
+            const data = people.map(p => payments.filter(x => x.payer === p).reduce((sum, x) => sum + x.amount, 0));
+
+            if (window.pieChart) window.pieChart.destroy();
+            if (window.barChart) window.barChart.destroy();
+
+            window.pieChart = new Chart(ctxPie, {
+                type: 'pie',
+                data: { labels, datasets: [{ data }] }
+            });
+
+            window.barChart = new Chart(ctxBar, {
+                type: 'bar',
+                data: { labels, datasets: [{ data, label: 'المبالغ المدفوعة' }] }
+            });
+        }
+
+        async function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text("تقرير قِطّة", 10, 10);
+            payments.forEach((p, i) => {
+                doc.text(`${i+1}. ${p.payer} - ${p.amount} (${p.category})`, 10, 20 + i*10);
+            });
+            doc.save("report.pdf");
+        }
+
+        function shareReport() {
+            const report = people.map(p => {
+                const paid = payments.filter(x => x.payer === p).reduce((sum, x) => sum + x.amount, 0);
+                return `${p}: ${paid} ريال`;
+            }).join("\n");
+            const shareText = `تقرير قِطّة:\n${report}`;
+            if (navigator.share) {
+                navigator.share({ title: "تقرير قِطّة", text: shareText });
+            } else {
+                alert("انسخ التقرير:\n" + shareText);
+            }
+        }
+
+        updateUI();
+    </script>
+</body>
+</html>
